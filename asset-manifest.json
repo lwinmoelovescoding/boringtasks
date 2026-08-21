@@ -1,15 +1,15 @@
 {
   "files": {
     "main.css": "/boringtasks/static/css/main.0d02a69b.css",
-    "main.js": "/boringtasks/static/js/main.1c916f9b.js",
+    "main.js": "/boringtasks/static/js/main.4711338a.js",
     "static/js/453.49e6abcd.chunk.js": "/boringtasks/static/js/453.49e6abcd.chunk.js",
     "index.html": "/boringtasks/index.html",
     "main.0d02a69b.css.map": "/boringtasks/static/css/main.0d02a69b.css.map",
-    "main.1c916f9b.js.map": "/boringtasks/static/js/main.1c916f9b.js.map",
+    "main.4711338a.js.map": "/boringtasks/static/js/main.4711338a.js.map",
     "453.49e6abcd.chunk.js.map": "/boringtasks/static/js/453.49e6abcd.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.0d02a69b.css",
-    "static/js/main.1c916f9b.js"
+    "static/js/main.4711338a.js"
   ]
 }
