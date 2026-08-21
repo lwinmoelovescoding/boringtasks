@@ -159,3 +159,39 @@ legend { color: var(--text-muted); font-size: 0.85rem; padding: 0 6px; }
 .hint { font-size: 0.82rem; color: var(--text-muted); line-height: 1.55; }
 .hint a { color: var(--accent-hover); }
 .hint code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 0.78rem; }
+
+/* ── Lock Screen ── */
+.lock-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: radial-gradient(circle at top, #1e293b 0%, #0f172a 60%);
+}
+.lock-card { text-align: center; width: 100%; max-width: 360px; }
+.lock-card h1 { font-size: 1.4rem; margin-bottom: 8px; }
+.lock-subtitle { color: var(--text-muted); margin-bottom: 18px; }
+.pin-dots { display: flex; justify-content: center; gap: 10px; margin-bottom: 12px; min-height: 14px; }
+.pin-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 1px solid #cbd5e1; background: transparent;
+}
+.pin-dot.filled { background: #e2e8f0; border-color: #e2e8f0; }
+.lock-error { color: #f87171; font-size: 0.85rem; margin-bottom: 10px; min-height: 20px; }
+.lock-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 72px);
+  justify-content: center;
+  gap: 12px;
+}
+.lock-key {
+  width: 72px; height: 72px; border-radius: 50%;
+  border: 1px solid #475569;
+  background: #ffffff14;
+  color: #f8fafc;
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+.lock-key:hover { background: #ffffff24; }
+.lock-key-back { font-size: 1.2rem; }
