@@ -1,8 +1,14 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import App from './App';
 
-test('renders learn react link', () => {
+test('shows lock screen then unlocks app with passcode', () => {
   render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+
+  expect(screen.getByText(/enter passcode/i)).toBeInTheDocument();
+
+  for (const digit of '9552000') {
+    fireEvent.click(screen.getByRole('button', { name: digit }));
+  }
+
+  expect(screen.getByText(/task reminder/i)).toBeInTheDocument();
 });
