@@ -22,6 +22,13 @@ const PRIORITY_COLORS = {
   Urgent: '#ef4444',
 };
 
+const DEFAULT_EMAIL_SETTINGS = {
+  publicKey: process.env.REACT_APP_EMAILJS_PUBLIC_KEY || 'bNpWNwq6W9Mw1osKF',
+  serviceId: process.env.REACT_APP_EMAILJS_SERVICE_ID || 'service_dw5ejsb',
+  templateId: process.env.REACT_APP_EMAILJS_TEMPLATE_ID || 'template_8vbtfca',
+  recipientEmail: process.env.REACT_APP_RECIPIENT_EMAIL || 'lwinmoe.wanwan@gmail.com',
+};
+
 // Reminder options stored as minutes
 const REMINDER_OPTIONS = [
   { label: '1 hour',  value: 60 },
@@ -375,10 +382,10 @@ export default function App() {
   const [settings] = useState(() => {
     const saved = loadFromStorage(SETTINGS_KEY, {});
     return {
-      publicKey:      saved.publicKey      || process.env.REACT_APP_EMAILJS_PUBLIC_KEY  || '',
-      serviceId:      saved.serviceId      || process.env.REACT_APP_EMAILJS_SERVICE_ID  || '',
-      templateId:     saved.templateId     || process.env.REACT_APP_EMAILJS_TEMPLATE_ID || '',
-      recipientEmail: saved.recipientEmail || process.env.REACT_APP_RECIPIENT_EMAIL     || '',
+      publicKey: saved.publicKey || DEFAULT_EMAIL_SETTINGS.publicKey,
+      serviceId: saved.serviceId || DEFAULT_EMAIL_SETTINGS.serviceId,
+      templateId: saved.templateId || DEFAULT_EMAIL_SETTINGS.templateId,
+      recipientEmail: saved.recipientEmail || DEFAULT_EMAIL_SETTINGS.recipientEmail,
     };
   });
   const [reminderLog, setReminderLog] = useState(() => loadFromStorage(REMINDER_LOG_KEY, {}));
