@@ -159,3 +159,35 @@ legend { color: var(--text-muted); font-size: 0.85rem; padding: 0 6px; }
 .hint { font-size: 0.82rem; color: var(--text-muted); line-height: 1.55; }
 .hint a { color: var(--accent-hover); }
 .hint code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 0.78rem; }
+
+.complete-btn { font-size: 1.1rem; }
+.complete-btn.done { opacity: 0.6; }
+
+.btn.success { background: #16a34a; border-color: #16a34a; color: #fff; }
+.btn.danger  { background: #b91c1c; border-color: #b91c1c; color: #fff; }
+
+.test-email-btn { width: 100%; justify-content: center; font-weight: 600; padding: 10px; }
+.test-email-btn.success { background: #16a34a; border-color: #16a34a; color: #fff; }
+.test-email-btn.danger  { background: #b91c1c; border-color: #b91c1c; color: #fff; }
+.test-email-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ── Mobile responsive ── */
+@media (max-width: 600px) {
+  .app { padding: 16px 12px 80px; }
+  .app-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .header-right { width: 100%; justify-content: space-between; }
+  .toolbar { flex-direction: column; }
+  .search { width: 100%; }
+  .filter-group { width: 100%; }
+  .filter-btn { flex: 1; text-align: center; }
+  .sort-select { width: 100%; }
+  .task-card { padding: 12px; gap: 8px; }
+  .task-title { font-size: 0.95rem; }
+  .task-actions { flex-direction: row; }
+  .modal { padding: 20px 16px; }
+  .modal .row { flex-direction: column; gap: 12px; }
+  .chip-group { flex-wrap: wrap; }
+  .chip { padding: 8px 14px; min-height: 38px; }
+  .btn { padding: 10px 14px; min-height: 42px; }
+  .icon-btn { padding: 8px; min-width: 36px; min-height: 36px; }
+}

@@ -1,11 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { format, differenceInDays, addMonths, parseISO, isValid } from 'date-fns';
+import { format, differenceInMinutes, addMonths, parseISO, isValid } from 'date-fns';
 import emailjs from '@emailjs/browser';
+import {
+  collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc
+} from 'firebase/firestore';
+import { db } from './firebase';
 import './index.css';
 
-const STORAGE_KEY = 'todo-reminder-tasks';
 const SETTINGS_KEY = 'todo-reminder-settings';
 const REMINDER_LOG_KEY = 'todo-reminder-sent-log';
+const TASKS_COLLECTION = 'tasks';
 
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
 const PRIORITY_COLORS = {
@@ -14,6 +18,22 @@ const PRIORITY_COLORS = {
   High: '#f97316',
   Urgent: '#ef4444',
 };
+
+// Reminder options stored as minutes
+const REMINDER_OPTIONS = [
+  { label: '1 hour',  value: 60 },
+  { label: '3 hours', value: 180 },
+  { label: '1 day',   value: 1440 },
+  { label: '3 days',  value: 4320 },
+  { label: '5 days',  value: 7200 },
+  { label: '7 days',  value: 10080 },
+];
+
+function friendlyReminder(minutes) {
+  if (minutes < 60)   return `${minutes}m`;
+  if (minutes < 1440) return `${minutes / 60}h`;
+  return `${minutes / 1440}d`;
+}
 
 function loadFromStorage(key, fallback) {
   try {
@@ -34,10 +54,11 @@ function newTask(overrides = {}) {
     title: '',
     description: '',
     dueDate: '',
+    dueTime: '',          // HH:mm, required for hour-level reminders
     priority: 'Medium',
     completed: false,
-    recurring: false,         // repeat every month
-    reminderDays: [],         // e.g. [3, 5, 7]
+    recurring: false,
+    reminderMinutes: [],  // array of minute values from REMINDER_OPTIONS
     createdAt: new Date().toISOString(),
     ...overrides,
   };
@@ -45,87 +66,70 @@ function newTask(overrides = {}) {
 
 // ─── EmailJS helpers ──────────────────────────────────────────────────────────
 
-async function sendReminderEmail(settings, task, daysLeft) {
+async function sendReminderEmail(settings, task, minutesBefore) {
   const { serviceId, templateId, publicKey, recipientEmail } = settings;
   if (!serviceId || !templateId || !publicKey || !recipientEmail) return false;
+
+  const dueStr = task.dueDate
+    ? format(parseISO(task.dueDate), 'MMMM d, yyyy') + (task.dueTime ? ` at ${task.dueTime}` : '')
+    : 'No date set';
+
+  let timeLeftLabel;
+  if (typeof minutesBefore === 'string') {
+    timeLeftLabel = minutesBefore;
+  } else if (minutesBefore < 60) {
+    timeLeftLabel = `${minutesBefore} minutes`;
+  } else if (minutesBefore < 1440) {
+    timeLeftLabel = `${minutesBefore / 60} hour(s)`;
+  } else {
+    timeLeftLabel = `${minutesBefore / 1440} day(s)`;
+  }
+
   try {
     await emailjs.send(
       serviceId,
       templateId,
       {
         to_email: recipientEmail,
+        to_name: recipientEmail,
+        email: recipientEmail,
+        reply_to: recipientEmail,
         task_title: task.title,
         task_priority: task.priority,
-        due_date: format(parseISO(task.dueDate), 'MMMM d, yyyy'),
-        days_left: daysLeft,
+        due_date: dueStr,
+        days_left: timeLeftLabel,
         task_description: task.description || '(no description)',
       },
       publicKey
     );
     return true;
   } catch (e) {
-    console.error('EmailJS error:', e);
+    console.error('EmailJS error:', e?.text || e?.message || e);
     return false;
   }
 }
 
 // ─── Components ───────────────────────────────────────────────────────────────
 
-function SettingsModal({ settings, onSave, onClose }) {
-  const [form, setForm] = useState(settings);
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>⚙️ Email Reminder Settings</h2>
-        <p className="hint">
-          Uses <strong>EmailJS</strong> (free). Create an account at{' '}
-          <a href="https://www.emailjs.com" target="_blank" rel="noreferrer">emailjs.com</a>,
-          add a Gmail service, create an email template, then fill in the IDs below.
-          <br /><br />
-          <strong>Template variables to include:</strong>{' '}
-          <code>{'{{task_title}}'}</code>, <code>{'{{due_date}}'}</code>,{' '}
-          <code>{'{{days_left}}'}</code>, <code>{'{{task_priority}}'}</code>,{' '}
-          <code>{'{{task_description}}'}</code>, <code>{'{{to_email}}'}</code>
-        </p>
-        <label>EmailJS Public Key
-          <input value={form.publicKey} onChange={set('publicKey')} placeholder="user_xxxxxxxxxx" />
-        </label>
-        <label>EmailJS Service ID
-          <input value={form.serviceId} onChange={set('serviceId')} placeholder="service_xxxxxxx" />
-        </label>
-        <label>EmailJS Template ID
-          <input value={form.templateId} onChange={set('templateId')} placeholder="template_xxxxxxx" />
-        </label>
-        <label>Your Email (reminders sent here)
-          <input type="email" value={form.recipientEmail} onChange={set('recipientEmail')} placeholder="you@gmail.com" />
-        </label>
-        <div className="modal-actions">
-          <button className="btn primary" onClick={() => { onSave(form); onClose(); }}>Save</button>
-          <button className="btn" onClick={onClose}>Cancel</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function TaskModal({ task, onSave, onClose }) {
-  const [form, setForm] = useState(task);
+  const [form, setForm] = useState({ reminderMinutes: [], ...task });
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const toggle = (k) => () => setForm((f) => ({ ...f, [k]: !f[k] }));
 
-  function toggleReminderDay(day) {
+  function toggleReminder(minutes) {
     setForm((f) => ({
       ...f,
-      reminderDays: f.reminderDays.includes(day)
-        ? f.reminderDays.filter((d) => d !== day)
-        : [...f.reminderDays, day],
+      reminderMinutes: f.reminderMinutes.includes(minutes)
+        ? f.reminderMinutes.filter((m) => m !== minutes)
+        : [...f.reminderMinutes, minutes],
     }));
   }
 
+  const needsTime = form.reminderMinutes.some((m) => m < 1440);
+
   function handleSave() {
     if (!form.title.trim()) return alert('Task title is required.');
+    if (needsTime && !form.dueTime) return alert('Please set a due time — it\'s required for hour-based reminders.');
     onSave(form);
     onClose();
   }
@@ -133,7 +137,7 @@ function TaskModal({ task, onSave, onClose }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>{task.id ? '✏️ Edit Task' : '➕ New Task'}</h2>
+        <h2>{task.title ? '✏️ Edit Task' : '➕ New Task'}</h2>
 
         <label>Title *
           <input value={form.title} onChange={set('title')} placeholder="What needs to be done?" autoFocus />
@@ -147,32 +151,47 @@ function TaskModal({ task, onSave, onClose }) {
           <label>Due Date
             <input type="date" value={form.dueDate} onChange={set('dueDate')} />
           </label>
-          <label>Priority
-            <select value={form.priority} onChange={set('priority')}>
-              {PRIORITIES.map((p) => <option key={p}>{p}</option>)}
-            </select>
+          <label>
+            Due Time {needsTime && <span className="required-star">*</span>}
+            <input type="time" value={form.dueTime} onChange={set('dueTime')} />
           </label>
         </div>
 
+        <label>Priority
+          <select value={form.priority} onChange={set('priority')}>
+            {PRIORITIES.map((p) => <option key={p}>{p}</option>)}
+          </select>
+        </label>
+
         <fieldset>
-          <legend>📧 Email Reminders (days before due)</legend>
+          <legend>📧 Email Reminders (before due)</legend>
           <div className="chip-group">
-            {[3, 5, 7].map((d) => (
+            {REMINDER_OPTIONS.map(({ label, value }) => (
               <button
-                key={d}
+                key={value}
                 type="button"
-                className={`chip ${form.reminderDays.includes(d) ? 'active' : ''}`}
-                onClick={() => toggleReminderDay(d)}
+                className={`chip ${form.reminderMinutes.includes(value) ? 'active' : ''}`}
+                onClick={() => toggleReminder(value)}
               >
-                {d} days
+                {label}
               </button>
             ))}
           </div>
+          {needsTime && (
+            <p className="hint" style={{ marginTop: 8 }}>
+              ⚠️ Hour-based reminders require a due time to be set above.
+            </p>
+          )}
         </fieldset>
 
         <label className="checkbox-label">
           <input type="checkbox" checked={form.recurring} onChange={toggle('recurring')} />
           🔁 Recurring — repeat every month
+        </label>
+
+        <label className="checkbox-label">
+          <input type="checkbox" checked={form.completed} onChange={toggle('completed')} />
+          ✅ Mark as completed
         </label>
 
         <div className="modal-actions">
@@ -185,22 +204,46 @@ function TaskModal({ task, onSave, onClose }) {
 }
 
 function TaskCard({ task, onEdit, onDelete, onToggle }) {
-  const daysLeft = task.dueDate && isValid(parseISO(task.dueDate))
-    ? differenceInDays(parseISO(task.dueDate), new Date())
-    : null;
+  const getDueInfo = () => {
+    if (!task.dueDate || !isValid(parseISO(task.dueDate))) return null;
+    const due = task.dueTime
+      ? new Date(`${task.dueDate}T${task.dueTime}`)
+      : parseISO(task.dueDate);
+    const mins = differenceInMinutes(due, new Date());
+    return mins;
+  };
+
+  const minsLeft = getDueInfo();
 
   const dueBadge = () => {
-    if (daysLeft === null) return null;
-    if (daysLeft < 0) return <span className="badge overdue">Overdue {Math.abs(daysLeft)}d</span>;
-    if (daysLeft === 0) return <span className="badge today">Due today</span>;
-    if (daysLeft <= 3) return <span className="badge soon">Due in {daysLeft}d</span>;
-    return <span className="badge future">Due in {daysLeft}d</span>;
+    if (minsLeft === null) return null;
+    if (minsLeft < 0) return <span className="badge overdue">Overdue</span>;
+    if (minsLeft < 60) return <span className="badge overdue">Due in {minsLeft}m</span>;
+    if (minsLeft < 1440) return <span className="badge today">Due in {Math.round(minsLeft / 60)}h</span>;
+    const days = Math.round(minsLeft / 1440);
+    if (days <= 3) return <span className="badge soon">Due in {days}d</span>;
+    return <span className="badge future">Due in {days}d</span>;
   };
+
+  const dueDateLabel = task.dueDate
+    ? format(parseISO(task.dueDate), 'MMM d, yyyy') + (task.dueTime ? ` ${task.dueTime}` : '')
+    : null;
+
+  const reminderLabels = (task.reminderMinutes || [])
+    .slice()
+    .sort((a, b) => a - b)
+    .map(friendlyReminder)
+    .join(', ');
 
   return (
     <div className={`task-card priority-${task.priority.toLowerCase()} ${task.completed ? 'completed' : ''}`}>
       <div className="task-left">
-        <input type="checkbox" checked={task.completed} onChange={() => onToggle(task.id)} />
+        <input
+          type="checkbox"
+          checked={task.completed}
+          onChange={() => onToggle(task.id)}
+          title={task.completed ? 'Mark as active' : 'Mark as complete'}
+        />
       </div>
       <div className="task-body">
         <div className="task-title-row">
@@ -209,16 +252,21 @@ function TaskCard({ task, onEdit, onDelete, onToggle }) {
         </div>
         {task.description && <p className="task-desc">{task.description}</p>}
         <div className="task-meta">
-          {task.dueDate && <span className="meta-item">📅 {format(parseISO(task.dueDate), 'MMM d, yyyy')}</span>}
+          {dueDateLabel && <span className="meta-item">📅 {dueDateLabel}</span>}
           {dueBadge()}
           <span className="meta-item priority-label" style={{ color: PRIORITY_COLORS[task.priority] }}>{task.priority}</span>
           {task.recurring && <span className="meta-item">🔁 Monthly</span>}
-          {task.reminderDays.length > 0 && (
-            <span className="meta-item">📧 {task.reminderDays.sort((a,b)=>a-b).join(', ')}d</span>
-          )}
+          {reminderLabels && <span className="meta-item">📧 {reminderLabels}</span>}
         </div>
       </div>
       <div className="task-actions">
+        <button
+          className={`icon-btn complete-btn ${task.completed ? 'done' : ''}`}
+          onClick={() => onToggle(task.id)}
+          title={task.completed ? 'Undo complete' : 'Complete task'}
+        >
+          {task.completed ? '↩️' : '✔️'}
+        </button>
         <button className="icon-btn" onClick={() => onEdit(task)} title="Edit">✏️</button>
         <button className="icon-btn" onClick={() => onDelete(task.id)} title="Delete">🗑️</button>
       </div>
@@ -226,44 +274,115 @@ function TaskCard({ task, onEdit, onDelete, onToggle }) {
   );
 }
 
+// ─── Test Email Button ────────────────────────────────────────────────────────
+
+function TestEmailButton({ settings }) {
+  const [status, setStatus] = useState(''); // '' | 'sending' | 'ok' | 'fail'
+  const [error, setError] = useState('');
+
+  async function handleTest() {
+    setStatus('sending');
+    setError('');
+    try {
+      await emailjs.send(
+        settings.serviceId,
+        settings.templateId,
+        {
+          to_email: settings.recipientEmail,
+          to_name: settings.recipientEmail,
+          email: settings.recipientEmail,
+          reply_to: settings.recipientEmail,
+          task_title: '🧪 Test Task',
+          task_priority: 'Medium',
+          due_date: 'Today',
+          days_left: 'Test — no real deadline',
+          task_description: 'This is a test email from your Task Reminder app.',
+        },
+        settings.publicKey
+      );
+      setStatus('ok');
+    } catch (e) {
+      setError(e?.text || e?.message || JSON.stringify(e));
+      setStatus('fail');
+    }
+    setTimeout(() => { setStatus(''); setError(''); }, 5000);
+  }
+
+  const label = { '': '📨 Test Email', sending: '⏳ Sending...', ok: '✅ Sent!', fail: '❌ Failed' }[status];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+      <button
+        className={`btn ${status === 'ok' ? 'success' : status === 'fail' ? 'danger' : ''}`}
+        onClick={handleTest}
+        disabled={status === 'sending'}
+        title="Send a test reminder email"
+      >
+        {label}
+      </button>
+      {error && <span style={{ fontSize: '0.72rem', color: '#f87171', maxWidth: 200, textAlign: 'right' }}>{error}</span>}
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [tasks, setTasks] = useState(() => loadFromStorage(STORAGE_KEY, []));
-  const [settings, setSettings] = useState(() =>
-    loadFromStorage(SETTINGS_KEY, { publicKey: '', serviceId: '', templateId: '', recipientEmail: '' })
-  );
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [settings] = useState(() => {
+    const saved = loadFromStorage(SETTINGS_KEY, {});
+    return {
+      publicKey:      saved.publicKey      || process.env.REACT_APP_EMAILJS_PUBLIC_KEY  || '',
+      serviceId:      saved.serviceId      || process.env.REACT_APP_EMAILJS_SERVICE_ID  || '',
+      templateId:     saved.templateId     || process.env.REACT_APP_EMAILJS_TEMPLATE_ID || '',
+      recipientEmail: saved.recipientEmail || process.env.REACT_APP_RECIPIENT_EMAIL     || '',
+    };
+  });
   const [reminderLog, setReminderLog] = useState(() => loadFromStorage(REMINDER_LOG_KEY, {}));
 
-  const [showSettings, setShowSettings] = useState(false);
-  const [editingTask, setEditingTask] = useState(null); // null = closed, {} = new, task = edit
-  const [filter, setFilter] = useState('all'); // all | active | completed
-  const [sortBy, setSortBy] = useState('dueDate'); // dueDate | priority | created
+  const [editingTask, setEditingTask] = useState(null);
+  const [filter, setFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('dueDate');
   const [searchQ, setSearchQ] = useState('');
   const [statusMsg, setStatusMsg] = useState('');
 
-  // Persist tasks & settings
-  useEffect(() => saveToStorage(STORAGE_KEY, tasks), [tasks]);
   useEffect(() => saveToStorage(SETTINGS_KEY, settings), [settings]);
   useEffect(() => saveToStorage(REMINDER_LOG_KEY, reminderLog), [reminderLog]);
 
-  // ── Reminder checker (runs on load and every hour) ──
+  // ── Real-time Firestore sync ──
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, TASKS_COLLECTION), (snap) => {
+      const loaded = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setTasks(loaded);
+      setLoading(false);
+    }, (err) => {
+      console.error('Firestore error:', err);
+      setLoading(false);
+    });
+    return () => unsub();
+  }, []);
+
+  // ── Reminder checker — runs every minute ──
   const checkReminders = useCallback(async () => {
     if (!settings.publicKey || !settings.serviceId || !settings.templateId || !settings.recipientEmail) return;
-    const today = format(new Date(), 'yyyy-MM-dd');
     const newLog = { ...reminderLog };
+    const nowMin = format(new Date(), 'yyyy-MM-dd HH:mm');
     let sent = 0;
 
     for (const task of tasks) {
-      if (task.completed || !task.dueDate || task.reminderDays.length === 0) continue;
-      const daysLeft = differenceInDays(parseISO(task.dueDate), new Date());
-      for (const d of task.reminderDays) {
-        const logKey = `${task.id}-${d}-${today}`;
-        if (daysLeft === d && !newLog[logKey]) {
-          const ok = await sendReminderEmail(settings, task, d);
-          if (ok) {
-            newLog[logKey] = true;
-            sent++;
+      if (task.completed || !task.dueDate || !(task.reminderMinutes || []).length) continue;
+      const due = task.dueTime
+        ? new Date(`${task.dueDate}T${task.dueTime}`)
+        : parseISO(task.dueDate);
+      const minsLeft = differenceInMinutes(due, new Date());
+
+      for (const m of task.reminderMinutes) {
+        if (minsLeft >= m - 1 && minsLeft <= m + 1) {
+          const logKey = `${task.id}-${m}-${nowMin.slice(0, 13)}`;
+          if (!newLog[logKey]) {
+            const ok = await sendReminderEmail(settings, task, m);
+            if (ok) { newLog[logKey] = true; sent++; }
           }
         }
       }
@@ -277,47 +396,34 @@ export default function App() {
 
   useEffect(() => {
     checkReminders();
-    const id = setInterval(checkReminders, 60 * 60 * 1000);
+    const id = setInterval(checkReminders, 60 * 1000);
     return () => clearInterval(id);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Task operations ──
-  function saveTask(task) {
-    setTasks((prev) => {
-      const idx = prev.findIndex((t) => t.id === task.id);
-      if (idx === -1) return [...prev, task];
-      const updated = [...prev];
-      updated[idx] = task;
-      return updated;
-    });
+  // ── Task operations (Firestore) ──
+  async function saveTask(task) {
+    const ref = doc(db, TASKS_COLLECTION, task.id);
+    await setDoc(ref, task);
   }
 
-  function deleteTask(id) {
+  async function deleteTask(id) {
     if (!window.confirm('Delete this task?')) return;
-    setTasks((prev) => prev.filter((t) => t.id !== id));
+    await deleteDoc(doc(db, TASKS_COLLECTION, id));
   }
 
-  function toggleTask(id) {
-    setTasks((prev) =>
-      prev.map((t) => {
-        if (t.id !== id) return t;
-        const completed = !t.completed;
-        // If recurring and just completed, clone for next month
-        if (completed && t.recurring && t.dueDate) {
-          const nextDue = format(addMonths(parseISO(t.dueDate), 1), 'yyyy-MM-dd');
-          setTimeout(() => {
-            setTasks((prev2) => [
-              ...prev2,
-              newTask({ ...t, id: crypto.randomUUID(), completed: false, dueDate: nextDue, createdAt: new Date().toISOString() }),
-            ]);
-          }, 0);
-        }
-        return { ...t, completed };
-      })
-    );
+  async function toggleTask(id) {
+    const task = tasks.find((t) => t.id === id);
+    if (!task) return;
+    const completed = !task.completed;
+    await updateDoc(doc(db, TASKS_COLLECTION, id), { completed });
+    // If recurring and just completed, create next month's copy
+    if (completed && task.recurring && task.dueDate) {
+      const nextDue = format(addMonths(parseISO(task.dueDate), 1), 'yyyy-MM-dd');
+      const next = newTask({ ...task, id: crypto.randomUUID(), completed: false, dueDate: nextDue, createdAt: new Date().toISOString() });
+      await setDoc(doc(db, TASKS_COLLECTION, next.id), next);
+    }
   }
 
-  // ── Filtering & sorting ──
   const priorityOrder = { Urgent: 0, High: 1, Medium: 2, Low: 3 };
 
   const visible = tasks
@@ -341,7 +447,6 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* Header */}
       <header className="app-header">
         <div className="header-left">
           <h1>✅ Task Reminder</h1>
@@ -350,11 +455,10 @@ export default function App() {
         <div className="header-right">
           {statusMsg && <span className="status-msg">{statusMsg}</span>}
           <button className="btn primary" onClick={() => setEditingTask(newTask())}>+ New Task</button>
-          <button className="btn icon" onClick={() => setShowSettings(true)} title="Email Settings">⚙️</button>
+          <TestEmailButton settings={settings} />
         </div>
       </header>
 
-      {/* Toolbar */}
       <div className="toolbar">
         <input
           className="search"
@@ -376,9 +480,10 @@ export default function App() {
         </select>
       </div>
 
-      {/* Task list */}
       <main className="task-list">
-        {visible.length === 0 ? (
+        {loading ? (
+          <div className="empty"><p>⏳ Loading tasks...</p></div>
+        ) : visible.length === 0 ? (
           <div className="empty">
             <p>No tasks found.</p>
             <button className="btn primary" onClick={() => setEditingTask(newTask())}>Add your first task</button>
@@ -396,12 +501,8 @@ export default function App() {
         )}
       </main>
 
-      {/* Modals */}
       {editingTask && (
         <TaskModal task={editingTask} onSave={saveTask} onClose={() => setEditingTask(null)} />
-      )}
-      {showSettings && (
-        <SettingsModal settings={settings} onSave={setSettings} onClose={() => setShowSettings(false)} />
       )}
     </div>
   );
