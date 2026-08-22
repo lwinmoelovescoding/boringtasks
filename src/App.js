@@ -10,6 +10,7 @@ import './index.css';
 const SETTINGS_KEY = 'todo-reminder-settings';
 const REMINDER_LOG_KEY = 'todo-reminder-sent-log';
 const TASKS_COLLECTION = 'tasks';
+const APP_PASSCODE = process.env.REACT_APP_APP_PASSCODE || '9552000';
 
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
 const PRIORITY_COLORS = {
@@ -274,6 +275,45 @@ function TaskCard({ task, onEdit, onDelete, onToggle }) {
   );
 }
 
+function LockScreen({ pin, pinLength, error, onDigit, onBackspace }) {
+  return (
+    <div className="lock-screen">
+      <div className="lock-card">
+        <h1>🔒 Locked</h1>
+        <p className="lock-subtitle">Enter Passcode</p>
+        <div className="pin-dots" aria-label="Passcode dots">
+          {Array.from({ length: pinLength }).map((_, index) => (
+            <span key={index} className={`pin-dot ${index < pin.length ? 'filled' : ''}`} />
+          ))}
+        </div>
+        {error && <p className="lock-error">{error}</p>}
+        <div className="lock-pad">
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
+            <button
+              key={digit}
+              type="button"
+              className="lock-key"
+              onClick={() => onDigit(String(digit))}
+            >
+              {digit}
+            </button>
+          ))}
+          <div />
+          <button type="button" className="lock-key" onClick={() => onDigit('0')}>0</button>
+          <button
+            type="button"
+            className="lock-key lock-key-back"
+            onClick={onBackspace}
+            aria-label="Delete"
+          >
+            ⌫
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Test Email Button ────────────────────────────────────────────────────────
 
 function TestEmailButton({ settings }) {
@@ -346,6 +386,9 @@ export default function App() {
   const [sortBy, setSortBy] = useState('dueDate');
   const [searchQ, setSearchQ] = useState('');
   const [statusMsg, setStatusMsg] = useState('');
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState('');
 
   useEffect(() => saveToStorage(SETTINGS_KEY, settings), [settings]);
   useEffect(() => saveToStorage(REMINDER_LOG_KEY, reminderLog), [reminderLog]);
@@ -424,6 +467,33 @@ export default function App() {
     }
   }
 
+  function handleDigit(digit) {
+    setPinError('');
+    setPinInput((prev) => {
+      if (prev.length >= APP_PASSCODE.length) {
+        return prev;
+      }
+
+      const next = `${prev}${digit}`;
+      if (next.length === APP_PASSCODE.length) {
+        if (next === APP_PASSCODE) {
+          setIsUnlocked(true);
+          return '';
+        }
+
+        setPinError('Incorrect passcode');
+        return '';
+      }
+
+      return next;
+    });
+  }
+
+  function handleBackspace() {
+    setPinError('');
+    setPinInput((prev) => prev.slice(0, -1));
+  }
+
   const priorityOrder = { Urgent: 0, High: 1, Medium: 2, Low: 3 };
 
   const visible = tasks
@@ -444,6 +514,18 @@ export default function App() {
     });
 
   const activeCount = tasks.filter((t) => !t.completed).length;
+
+  if (!isUnlocked) {
+    return (
+      <LockScreen
+        pin={pinInput}
+        pinLength={APP_PASSCODE.length}
+        error={pinError}
+        onDigit={handleDigit}
+        onBackspace={handleBackspace}
+      />
+    );
+  }
 
   return (
     <div className="app">
