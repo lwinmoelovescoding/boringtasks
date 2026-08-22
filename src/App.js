@@ -9,6 +9,8 @@ import './index.css';
 
 const SETTINGS_KEY = 'todo-reminder-settings';
 const REMINDER_LOG_KEY = 'todo-reminder-sent-log';
+const LEGACY_TASKS_STORAGE_KEY = 'todo-reminder-tasks';
+const FIRESTORE_MIGRATION_KEY = 'todo-reminder-firestore-migrated';
 const TASKS_COLLECTION = 'tasks';
 const APP_PASSCODE = process.env.REACT_APP_APP_PASSCODE || '9552000';
 
@@ -369,6 +371,7 @@ function TestEmailButton({ settings }) {
 export default function App() {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isMigratingLegacyTasks, setIsMigratingLegacyTasks] = useState(false);
   const [settings] = useState(() => {
     const saved = loadFromStorage(SETTINGS_KEY, {});
     return {
@@ -404,6 +407,50 @@ export default function App() {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    async function migrateLegacyTasks() {
+      const alreadyMigrated = loadFromStorage(FIRESTORE_MIGRATION_KEY, false);
+      const legacyTasks = loadFromStorage(LEGACY_TASKS_STORAGE_KEY, []);
+
+      if (alreadyMigrated || tasks.length > 0 || legacyTasks.length === 0) {
+        return;
+      }
+
+      setIsMigratingLegacyTasks(true);
+
+      try {
+        await Promise.all(
+          legacyTasks.map(async (legacyTask) => {
+            const taskId = legacyTask.id || crypto.randomUUID();
+            await setDoc(
+              doc(db, TASKS_COLLECTION, taskId),
+              {
+                ...newTask(),
+                ...legacyTask,
+                id: taskId,
+                reminderMinutes: legacyTask.reminderMinutes || [],
+              }
+            );
+          })
+        );
+
+        saveToStorage(FIRESTORE_MIGRATION_KEY, true);
+        setStatusMsg(`✅ Imported ${legacyTasks.length} task(s) to Firebase`);
+        setTimeout(() => setStatusMsg(''), 5000);
+      } catch (error) {
+        console.error('Legacy task migration failed:', error);
+        setStatusMsg('❌ Failed to import old tasks to Firebase');
+        setTimeout(() => setStatusMsg(''), 5000);
+      } finally {
+        setIsMigratingLegacyTasks(false);
+      }
+    }
+
+    if (!loading) {
+      migrateLegacyTasks();
+    }
+  }, [loading, tasks]);
 
   // ── Reminder checker — runs every minute ──
   const checkReminders = useCallback(async () => {
@@ -562,7 +609,7 @@ export default function App() {
       </div>
 
       <main className="task-list">
-        {loading ? (
+        {loading || isMigratingLegacyTasks ? (
           <div className="empty"><p>⏳ Loading tasks...</p></div>
         ) : visible.length === 0 ? (
           <div className="empty">
