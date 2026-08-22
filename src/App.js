@@ -364,7 +364,6 @@ function TestEmailButton({ settings }) {
     </div>
   );
 }
-
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {

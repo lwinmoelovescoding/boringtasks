@@ -170,7 +170,6 @@ legend { color: var(--text-muted); font-size: 0.85rem; padding: 0 6px; }
 .test-email-btn.success { background: #16a34a; border-color: #16a34a; color: #fff; }
 .test-email-btn.danger  { background: #b91c1c; border-color: #b91c1c; color: #fff; }
 .test-email-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-
 /* ── Lock Screen ── */
 .lock-screen {
   min-height: 100vh;
@@ -180,7 +179,6 @@ legend { color: var(--text-muted); font-size: 0.85rem; padding: 0 6px; }
   padding: 24px 16px;
   background: radial-gradient(circle at top, #1e293b 0%, #0f172a 60%);
 }
-
 .lock-card { text-align: center; width: 100%; max-width: 360px; }
 .lock-card h1 { font-size: 1.4rem; margin-bottom: 8px; }
 .lock-subtitle { color: var(--text-muted); margin-bottom: 18px; }
