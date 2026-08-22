@@ -6,7 +6,7 @@ test('shows lock screen then unlocks app with passcode', () => {
 
   expect(screen.getByText(/enter passcode/i)).toBeInTheDocument();
 
-  for (const digit of '9552000') {
+  for (const digit of '5207') {
     fireEvent.click(screen.getByRole('button', { name: digit }));
   }
 

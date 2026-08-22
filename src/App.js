@@ -12,7 +12,7 @@ const REMINDER_LOG_KEY = 'todo-reminder-sent-log';
 const LEGACY_TASKS_STORAGE_KEY = 'todo-reminder-tasks';
 const FIRESTORE_MIGRATION_KEY = 'todo-reminder-firestore-migrated';
 const TASKS_COLLECTION = 'tasks';
-const APP_PASSCODE = process.env.REACT_APP_APP_PASSCODE || '9552000';
+const APP_PASSCODE = process.env.REACT_APP_APP_PASSCODE || '5207';
 
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
 const PRIORITY_COLORS = {
